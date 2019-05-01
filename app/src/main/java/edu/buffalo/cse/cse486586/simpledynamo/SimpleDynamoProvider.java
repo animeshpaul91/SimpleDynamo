@@ -44,13 +44,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	private static final String IC = "IC"; //Forward Insert request to Coordinator and 2 Successors
 	private static Uri provideruri = Uri.parse("content://edu.buffalo.cse.cse486586.simpledynamo.provider"); //URI
-	List<String> myKeys; //stores/maps keys for this Node
-	List<Node> nodeList; //This is the ring maintained at Node 5554
+	List<Node> nodeList;
 	private static ArrayList<String> REMOTE_PORTS = new ArrayList<String>();
 	private static int no_of_avds;
 	private final int read_quorum = 2;
 	private final int write_quorum = 2;
-	int v=0; //Version Counter for Object Inserted
 
 	private class Node implements Comparable<Node>
 	{
@@ -82,11 +80,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 			REMOTE_PORTS.add(Integer.toString(i));
 		}
 		no_of_avds = REMOTE_PORTS.size();
-	}
-
-	public void sendmsgCT(String msg)
-	{
-		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg);
 	}
 
 	public boolean compareKey(String prevHash, String myHash, String keyHash)
@@ -200,7 +193,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 		set_remote_ports();
 		Log.d(TAG, "Main: "+ePort+" Remote Ports Obtained");
 		nodeList = new ArrayList<Node>(); //Instantiate nodeList
-		myKeys = new ArrayList<String>();
 
 		for (i=0;i < no_of_avds; i++) //Every Avd stores the Global state of the Dynamo Ring
 		{
@@ -294,21 +286,36 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 					if (pieces[0].equals(IC))
 					{
+						List<String> myFiles = Arrays.asList(con.fileList());;
+						String key = pieces[1], version, splitter[];
 						FileOutputStream fileOutputStream;
-						String value = pieces[2]+";"+Integer.toString(v++); //value;Version written to File
-						String key = pieces[1];
+						FileInputStream fileInputStream;
+						if (myFiles.contains(key)) //If the file already exists in AVD, re-version it
+						{
+							Log.d(TAG, "Server: "+ePort+" File: "+key+" Located with Stale Version");
+							fileInputStream = con.openFileInput(key);
+							BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
+							splitter = br.readLine().split(";");
+							int curr_version = Integer.valueOf(splitter[1]); //Existing Version
+							version = Integer.toString(curr_version + 1);
+							Log.d(TAG, "Server: "+ePort+" Version of file: "+key+" updated from "+curr_version+" to "+version);
+							br.close();
+							fileInputStream.close();
+						}
+						else
+							version = "1"; //New File
+						String value = pieces[2]+";"+version; //value;Version written to File
 						try
 						{
 							fileOutputStream = con.openFileOutput(key, Context.MODE_PRIVATE);
 							fileOutputStream.write(value.getBytes());
-							myKeys.add(key);
 							fileOutputStream.close();
 							out.writeUTF(ePort); //Acknowledging Insert
+							Log.d(TAG, "Server: "+ePort+" Write Successful");
 							out.flush();
 							out.close();
 							in.close();
 						}
-
 						catch (NullPointerException e)
 						{
 							Log.e(TAG, "Server_Insert: " +ePort+ " Nullpointer Exception Occurred");
@@ -337,8 +344,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 		{
 			String[] pieces = msgs[0].split(";");
 			String response;
-			Log.d(TAG, "Client: "+ePort+" Received Message: "+msgs[0]);
-
 			if (pieces[0].equals(IC)) //send insertion msg to Coordinator and its 2 successors
 			{
 				String ports[] = {pieces[3], pieces[4], pieces[5]};
@@ -353,6 +358,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						DataInputStream in = new DataInputStream(client.getInputStream());
 						DataOutputStream out = new DataOutputStream(client.getOutputStream());
 						out.writeUTF(msgToserver);
+						Log.d(TAG, "Client: "+ePort+" Sent Message: "+msgToserver+" to Node: "+port);
 						out.flush();
 						response = in.readUTF();
 						responses.add(response); //Will hold the ports of the avd's storing replicas
@@ -363,24 +369,28 @@ public class SimpleDynamoProvider extends ContentProvider {
 					catch (SocketTimeoutException e)
 					{
 						Log.e(TAG, "Client: " + ePort + " Socket Timeout Exception Occurred");
+						e.printStackTrace();
 					}
 
 					catch (UnknownHostException e)
 					{
 						Log.e(TAG, "Client: " + ePort + " UnknownHost Exception Occurred");
+						e.printStackTrace();
 					}
 
 					catch (IOException e)
 					{
 						Log.e(TAG, "Client: " + ePort + " IOException Occurred");
+						e.printStackTrace();
+					}
+					catch (Exception e)
+					{
+						Log.e(TAG, "Client: " + ePort + " IOException Occurred");
+						e.printStackTrace();
 					}
 				}
-
-				if (responses.size() >= write_quorum)
-				{
-					Log.d(TAG, "Client: "+ePort+" Required Responses Received");
-					return ("ACK");
-				}
+				Log.d(TAG, "Client: "+ePort+" Required Responses Received");
+				return ("ACK");
 			}
 			return null;
 		}
