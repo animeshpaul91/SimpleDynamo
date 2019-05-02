@@ -43,6 +43,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private static final String all_dht = "*";
 
 	private static final String IC = "IC"; //Forward Insert request to Coordinator and 2 Successors
+	private static final String DA = "DA"; //Delete all Keys from entire Ring
+	private static final String D = "D"; //Delete specific key
+	private static final String QA = "QA"; //Query all keys
+	private static final String Q = "Q"; //Query specific key
 	private static Uri provideruri = Uri.parse("content://edu.buffalo.cse.cse486586.simpledynamo.provider"); //URI
 	List<Node> nodeList;
 	private static ArrayList<String> REMOTE_PORTS = new ArrayList<String>();
@@ -127,9 +131,61 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
 		// TODO Auto-generated method stub
-		String currentQuery = selection;
+		String key = selection, keyhash=null;
 		Context con = getContext();
-		return 0;
+		List<String> myFiles = Arrays.asList(con.fileList());
+		String msgtosend;
+
+		if (key.equals(my_dht)) //Delete all files in my Avd
+		{
+			for (String file: myFiles)
+				con.deleteFile(file);
+			Log.d(TAG, "Main_Delete: "+ePort+" All files from this Avd are deleted");
+			return 1;
+		}
+
+		else if (key.equals(all_dht)) //Delete all files in entire Ring
+		{
+			msgtosend = DA+";";
+			sendMsgCT(msgtosend); //Signal all avds to delete all files
+			return 1;
+		}
+
+		else //Any Particular Key
+		{
+			try
+			{
+				keyhash = genHash(key); //Hash of current key
+			}
+			catch (NoSuchAlgorithmException e)
+			{
+				Log.e(TAG, "Main_Delete: "+ePort+" No Such Algorithm Exception Occurred");
+				e.printStackTrace();
+			}
+
+			for (Node node : nodeList) //Find right partition for the key and forward msg to Coordinator
+			{
+				try
+				{
+					String prevHash = genHash(node.pred);
+					String myHash = genHash(node.port);
+					boolean result = compareKey(prevHash, myHash, keyhash);
+					if (result)
+					{
+						msgtosend = D+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
+						sendMsgCT(msgtosend);
+						Log.d(TAG, "Main_Delete: "+ePort+" Key: "+key+" deleted from Coordinator and Replicas");
+						return 1;
+					}
+				}
+				catch (NoSuchAlgorithmException e)
+				{
+					Log.e(TAG, "Main_Delete: "+ePort+" No Such Algorithm Exception Occurred");
+					e.printStackTrace();
+				}
+			}
+		 return 0;
+		}
 	}
 
 	@Override
@@ -167,7 +223,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				{
 					String msgtosend = IC+";"+key+";"+value+";"+node.port+";"+node.succ+";"+node.nextsucc;
 					String ack = sendMsgCT(msgtosend);
-					Log.d(TAG, "Main: "+ePort+" Insert Ack received" +ack);
+					Log.d(TAG, "Main_Insert: "+ePort+" Insert Ack received" +ack);
 					break;
 				}
 			}
@@ -237,13 +293,107 @@ public class SimpleDynamoProvider extends ContentProvider {
 	public Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
 		// TODO Auto-generated method stub
-		String currentQuery = selection;
+		String key = selection, keyhash=null;
 		FileInputStream fileInputStream;
 		String[] columns = {key_field, value_field};
 		MatrixCursor mc = new MatrixCursor(columns);
-		String message;
+		String[] splitter;
+		String value, msgtosend;
 		Context con = getContext();
-		return null;
+		List<String> myFiles = Arrays.asList(con.fileList());
+
+		if (key.equals(my_dht)) //return all records in my avd
+		{
+			for (String file : myFiles)
+			{
+				try
+				{
+					fileInputStream = con.openFileInput(file);
+					BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
+					splitter = br.readLine().split(";");
+					value = splitter[0];
+					String[] row = {file, value};
+					mc.addRow(row);
+					br.close();
+					fileInputStream.close();
+				}
+				catch (IOException e)
+				{
+					Log.e(TAG, "Main_Query: "+ePort+" IO Exception Occurred in Opening File for Read Operation");
+				}
+			}
+			return mc;
+		}
+
+		else if (key.equals(all_dht)) //return all records in entire ring
+		{
+			msgtosend = QA+";";
+			String result = sendMsgCT(msgtosend); //Signal all avds to run @ query
+			String [] nodes = result.split("#");
+			for (String node: nodes)
+			{
+				String [] keyvalues = node.split(";");
+				for (String keyvalue: keyvalues)
+				{
+					String []kv = keyvalue.split(":");
+					String []row = {kv[0], kv[1]};
+					mc.addRow(row);
+				}
+			}
+			return mc;
+		}
+
+		else //return the most recent value for a particular key
+		{
+			List <String> values = new ArrayList<String>();
+			List<Integer> versions = new ArrayList<Integer>();
+			String val_versions=null;
+
+			try
+			{
+				keyhash = genHash(key); //Hash of current key
+			}
+			catch (NoSuchAlgorithmException e)
+			{
+				Log.e(TAG, "Main_Query: "+ePort+" No Such Algorithm Exception Occurred");
+				e.printStackTrace();
+			}
+
+			for (Node node : nodeList) //Find right partition for the key and forward msg to Coordinator
+			{
+				try
+				{
+					String prevHash = genHash(node.pred);
+					String myHash = genHash(node.port);
+					boolean result = compareKey(prevHash, myHash, keyhash);
+					if (result)
+					{
+						msgtosend = Q+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
+						val_versions  = sendMsgCT(msgtosend);
+						Log.d(TAG, "Server: "+ePort+" Values and Versions Received "+val_versions);
+						break;
+					}
+				}
+				catch (NoSuchAlgorithmException e)
+				{
+					Log.e(TAG, "Main_Query: "+ePort+" No Such Algorithm Exception Occurred");
+					e.printStackTrace();
+				}
+			}
+
+			String[] v = val_versions.split("#");
+			for (String vers: v)
+			{
+				String[] temp = vers.split(";");
+				values.add(temp[0]);
+				versions.add(Integer.parseInt(temp[1]));
+			}
+
+			int maxindex = versions.indexOf(Collections.max(versions));
+			String[] row = {key, values.get(maxindex)};
+			mc.addRow(row);
+			return mc;
+		}
 	}
 
 	@Override
@@ -286,21 +436,24 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 					if (pieces[0].equals(IC))
 					{
-						List<String> myFiles = Arrays.asList(con.fileList());;
-						String key = pieces[1], version, splitter[];
+						List<String> myFiles = Arrays.asList(con.fileList());
+						String key = pieces[1], version=null, splitter[];
 						FileOutputStream fileOutputStream;
 						FileInputStream fileInputStream;
 						if (myFiles.contains(key)) //If the file already exists in AVD, re-version it
 						{
 							Log.d(TAG, "Server: "+ePort+" File: "+key+" Located with Stale Version");
 							fileInputStream = con.openFileInput(key);
-							BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
-							splitter = br.readLine().split(";");
-							int curr_version = Integer.valueOf(splitter[1]); //Existing Version
-							version = Integer.toString(curr_version + 1);
-							Log.d(TAG, "Server: "+ePort+" Version of file: "+key+" updated from "+curr_version+" to "+version);
-							br.close();
-							fileInputStream.close();
+
+							if (fileInputStream != null) {
+								BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
+								splitter = br.readLine().split(";");
+								int curr_version = Integer.parseInt(splitter[1]); //Existing Version
+								version = Integer.toString(curr_version + 1);
+								Log.d(TAG, "Server: " + ePort + " Version of file: " + key + " updated from " + curr_version + " to " + version);
+								br.close();
+								fileInputStream.close();
+							}
 						}
 						else
 							version = "1"; //New File
@@ -327,6 +480,64 @@ public class SimpleDynamoProvider extends ContentProvider {
 							e.printStackTrace();
 						}
 					}
+
+					else if (pieces[0].equals(DA)) //Delete all keys
+					{
+						con.getContentResolver().delete(provideruri, my_dht, null);
+						Log.d(TAG, "Server: "+ePort+" All keys in my Avd are deleted");
+						out.writeUTF(ePort);
+						out.flush();
+						out.close();
+						in.close();
+					}
+
+					else if (pieces[0].equals(D))
+					{
+						String key = pieces[1];
+						con.deleteFile(key);
+						out.writeUTF(ePort);
+						out.flush();
+						out.close();
+						in.close();
+						Log.d(TAG, "Server: "+ePort+" Deleted Key: "+key+" from my Avd");
+					}
+
+					else if (pieces[0].equals(QA)) //Delete all keys
+					{
+						String result="";
+						Cursor cursor = con.getContentResolver().query(provideruri, null, my_dht, null, null);
+						while (cursor.moveToNext())
+						{
+							result+=cursor.getString(cursor.getColumnIndex(key_field)); //Key
+							result+=":"+cursor.getString(cursor.getColumnIndex(value_field)); //Value
+							result+=";";
+						}
+						cursor.close();
+						out.writeUTF(result);
+						out.flush();
+						out.close();
+						in.close();
+						Log.d(TAG, "Server: "+ePort+" @ Query Obtained in my Avd");
+					}
+
+					else if (pieces[0].equals(Q)) //Query particular key
+					{
+						String key = pieces[1];
+						FileInputStream fileInputStream;
+						String message;
+						fileInputStream = con.openFileInput(key);
+
+						if (fileInputStream != null)
+						{
+							BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
+							message = br.readLine();
+							out.writeUTF(message);
+							out.flush();
+							out.close();
+							in.close();
+							Log.d(TAG, "Server: "+ePort+" Value;Version Located and Returned to Client");
+						}
+					}
 				}
 				catch (IOException e)
 				{
@@ -343,56 +554,91 @@ public class SimpleDynamoProvider extends ContentProvider {
 		protected String doInBackground(String... msgs)
 		{
 			String[] pieces = msgs[0].split(";");
-			String response;
+			String ack;
+
 			if (pieces[0].equals(IC)) //send insertion msg to Coordinator and its 2 successors
 			{
-				String ports[] = {pieces[3], pieces[4], pieces[5]};
+				String[] p = {pieces[3], pieces[4], pieces[5]};
+				List <String> ports = Arrays.asList(p);
 				String msgToserver = IC+";"+pieces[1]+";"+pieces[2];
-				ArrayList<String> responses = new ArrayList<String>();
-
-				for (String port: ports)
-				{
-					try
-					{
-						Socket client = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(port) * 2);
-						DataInputStream in = new DataInputStream(client.getInputStream());
-						DataOutputStream out = new DataOutputStream(client.getOutputStream());
-						out.writeUTF(msgToserver);
-						Log.d(TAG, "Client: "+ePort+" Sent Message: "+msgToserver+" to Node: "+port);
-						out.flush();
-						response = in.readUTF();
-						responses.add(response); //Will hold the ports of the avd's storing replicas
-						out.close();
-						in.close();
-						client.close();
-					}
-					catch (SocketTimeoutException e)
-					{
-						Log.e(TAG, "Client: " + ePort + " Socket Timeout Exception Occurred");
-						e.printStackTrace();
-					}
-
-					catch (UnknownHostException e)
-					{
-						Log.e(TAG, "Client: " + ePort + " UnknownHost Exception Occurred");
-						e.printStackTrace();
-					}
-
-					catch (IOException e)
-					{
-						Log.e(TAG, "Client: " + ePort + " IOException Occurred");
-						e.printStackTrace();
-					}
-					catch (Exception e)
-					{
-						Log.e(TAG, "Client: " + ePort + " IOException Occurred");
-						e.printStackTrace();
-					}
-				}
-				Log.d(TAG, "Client: "+ePort+" Required Responses Received");
-				return ("ACK");
+				ack = send_to_server(ports, msgToserver);
+				return ack;
 			}
+
+			else if (pieces[0].equals(DA) || pieces[0].equals(QA)) //delete all messages or Query @ across all Avd's
+			{
+				List <String> ports = new ArrayList<String>(REMOTE_PORTS);
+				ack = send_to_server(ports, msgs[0]);
+				return ack;
+			}
+
+			else if (pieces[0].equals(D)) //delete particular key
+			{
+				String[] p = {pieces[2], pieces[3], pieces[4]};
+				List <String> ports = Arrays.asList(p);
+				String msgToserver = D+";"+pieces[1]; //D;key
+				ack = send_to_server(ports, msgToserver);
+				return ack;
+			}
+
+			else if (pieces[0].equals(Q)) //Query particular key
+			{
+				String[] p = {pieces[2], pieces[3], pieces[4]};
+				List <String> ports = Arrays.asList(p);
+				String msgToserver = Q+";"+pieces[1]; //Q;key
+				ack = send_to_server(ports, msgToserver);
+				return ack;
+			}
+
 			return null;
+		}
+
+		private String send_to_server(List<String> ports, String msgToserver)
+		{
+			String response = "", msgfromserver; //Will store the Votes/responses from Server
+			for (String port: ports)
+			{
+				try
+				{
+					Socket client = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(port) * 2);
+					DataInputStream in = new DataInputStream(client.getInputStream());
+					DataOutputStream out = new DataOutputStream(client.getOutputStream());
+					out.writeUTF(msgToserver);
+					Log.d(TAG, "Client: "+ePort+" Sent Message: "+msgToserver+" to Node: "+port);
+					out.flush();
+					msgfromserver = in.readUTF();
+					Log.d(TAG, "Client: "+ePort+" Received Response: "+msgfromserver+" from Node: "+port);
+					response += msgfromserver;
+					response += "#";
+					out.close();
+					in.close();
+					client.close();
+				}
+				catch (SocketTimeoutException e)
+				{
+					Log.e(TAG, "Client: " + ePort + " Socket Timeout Exception Occurred");
+					e.printStackTrace();
+				}
+
+				catch (UnknownHostException e)
+				{
+					Log.e(TAG, "Client: " + ePort + " UnknownHost Exception Occurred");
+					e.printStackTrace();
+				}
+
+				catch (IOException e)
+				{
+					Log.e(TAG, "Client: " + ePort + " IOException Occurred");
+					e.printStackTrace();
+				}
+				catch (Exception e)
+				{
+					Log.e(TAG, "Client: " + ePort + " IOException Occurred");
+					e.printStackTrace();
+				}
+			}
+			Log.d(TAG, "Client: "+ePort+" Combined Response: "+response);
+			return (response);
 		}
 	}
 }
