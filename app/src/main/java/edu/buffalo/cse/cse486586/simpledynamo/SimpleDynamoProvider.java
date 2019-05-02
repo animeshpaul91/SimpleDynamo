@@ -601,6 +601,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				try
 				{
 					Socket client = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(port) * 2);
+					client.setSoTimeout(300);
 					DataInputStream in = new DataInputStream(client.getInputStream());
 					DataOutputStream out = new DataOutputStream(client.getOutputStream());
 					out.writeUTF(msgToserver);
@@ -617,6 +618,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 				catch (SocketTimeoutException e)
 				{
 					Log.e(TAG, "Client: " + ePort + " Socket Timeout Exception Occurred");
+					e.printStackTrace();
+				}
+
+				catch (SocketException e)
+				{
+					Log.e(TAG, "Client: " + ePort + " Socket Exception Occurred");
 					e.printStackTrace();
 				}
 
