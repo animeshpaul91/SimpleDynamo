@@ -36,6 +36,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	//Variables that we will need
 	private static final String TAG = SimpleDynamoProvider.class.getSimpleName();
 	private static String ePort = null; //Emulator Port
+	private static String myPortHash;
 	private static final int SERVER_PORT = 10000;
 	private static final String key_field = "key";
 	private static final String  value_field = "value";
@@ -47,12 +48,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private static final String D = "D"; //Delete specific key
 	private static final String QA = "QA"; //Query all keys
 	private static final String Q = "Q"; //Query specific key
+	private static final String S = "S"; //Synchronize signal
 	private static Uri provideruri = Uri.parse("content://edu.buffalo.cse.cse486586.simpledynamo.provider"); //URI
 	List<Node> nodeList;
 	private static ArrayList<String> REMOTE_PORTS = new ArrayList<String>();
 	private static int no_of_avds;
-	private final int read_quorum = 2;
-	private final int write_quorum = 2;
+	private static String prev2prevNode, prevNode, nextnode;
 
 	private class Node implements Comparable<Node>
 	{
@@ -74,6 +75,21 @@ public class SimpleDynamoProvider extends ContentProvider {
 		public int compareTo(Node another) {
 			return this.hash.compareTo(another.hash);
 		}
+	}
+
+	public String getHash(String key)
+	{
+		String keyhash=null;
+		try
+		{
+			keyhash = genHash(key); //Hash of current key
+		}
+		catch (NoSuchAlgorithmException e)
+		{
+			Log.e(TAG, "Main_Delete: "+ePort+" No Such Algorithm Exception Occurred");
+			e.printStackTrace();
+		}
+		return keyhash;
 	}
 
 	public void set_remote_ports()
@@ -128,6 +144,34 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return result;
 	}
 
+	public void set_neighbors()
+	{
+		int i;
+		//Setting succ and pred
+		for (i=0;i<no_of_avds;i++)
+		{
+			nodeList.get(i).succ = nodeList.get((i + 1) % no_of_avds).port;
+			nodeList.get(i).nextsucc = nodeList.get((i + 2) % no_of_avds).port;
+			nodeList.get(i).pred = nodeList.get((i + 4) % no_of_avds).port;
+			nodeList.get(i).prepred = nodeList.get((i + 3) % no_of_avds).port;
+
+			if (nodeList.get(i).port.equals(ePort)) //this gets only executed once
+			{
+				prev2prevNode = nodeList.get(i).prepred;
+				prevNode = nodeList.get(i).pred;
+				nextnode = nodeList.get(i).succ;
+			}
+		}
+	}
+
+	public void synchronize_keys()
+	{
+		String msgtosend = S+";"+prev2prevNode+";"+prevNode+";"+nextnode;
+		String result = sendMsgCT(msgtosend);
+		Log.d(TAG,"Main_Sync: "+ePort+" Response from Client: "+result);
+		Log.d(TAG,"Main_Sync: "+ePort+" Recovered Node Ready for Operations");
+	}
+
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
 		// TODO Auto-generated method stub
@@ -153,35 +197,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 		else //Any Particular Key
 		{
-			try
-			{
-				keyhash = genHash(key); //Hash of current key
-			}
-			catch (NoSuchAlgorithmException e)
-			{
-				Log.e(TAG, "Main_Delete: "+ePort+" No Such Algorithm Exception Occurred");
-				e.printStackTrace();
-			}
-
+			keyhash = getHash(key);
 			for (Node node : nodeList) //Find right partition for the key and forward msg to Coordinator
 			{
-				try
+				String prevHash = getHash(node.pred);
+				String myHash = getHash(node.port);
+				boolean result = compareKey(prevHash, myHash, keyhash);
+				if (result)
 				{
-					String prevHash = genHash(node.pred);
-					String myHash = genHash(node.port);
-					boolean result = compareKey(prevHash, myHash, keyhash);
-					if (result)
-					{
-						msgtosend = D+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
-						sendMsgCT(msgtosend);
-						Log.d(TAG, "Main_Delete: "+ePort+" Key: "+key+" deleted from Coordinator and Replicas");
-						return 1;
-					}
-				}
-				catch (NoSuchAlgorithmException e)
-				{
-					Log.e(TAG, "Main_Delete: "+ePort+" No Such Algorithm Exception Occurred");
-					e.printStackTrace();
+					msgtosend = D+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
+					sendMsgCT(msgtosend);
+					Log.d(TAG, "Main_Delete: "+ePort+" Key: "+key+" deleted from Coordinator and Replicas");
+					return 1;
 				}
 			}
 		 return 0;
@@ -202,36 +229,19 @@ public class SimpleDynamoProvider extends ContentProvider {
 		key = values.getAsString(key_field);
 		value = values.getAsString(value_field);
 		boolean result;
-
-		try {
-			keyhash = genHash(key); //Hash of current key
-		}
-		catch (NoSuchAlgorithmException e)
-		{
-			Log.e(TAG, "Main_Insert: "+ePort+" No Such Algorithm Exception Occurred");
-			e.printStackTrace();
-		}
+		keyhash = getHash(key);
 
 		for (Node node : nodeList) //Find right partition for the key and forward msg to Coordinator
 		{
-			try
+			String prevHash = getHash(node.pred);
+			String myHash = getHash(node.port);
+			result = compareKey(prevHash, myHash, keyhash);
+			if (result)
 			{
-				String prevHash = genHash(node.pred);
-				String myHash = genHash(node.port);
-				result = compareKey(prevHash, myHash, keyhash);
-				if (result)
-				{
-					String msgtosend = IC+";"+key+";"+value+";"+node.port+";"+node.succ+";"+node.nextsucc;
-					String ack = sendMsgCT(msgtosend);
-					Log.d(TAG, "Main_Insert: "+ePort+" Insert Ack received" +ack);
-					break;
-				}
-			}
-
-			catch (NoSuchAlgorithmException e)
-			{
-				Log.e(TAG, "Main_Insert: "+ePort+" No Such Algorithm Exception Occurred");
-				e.printStackTrace();
+				String msgtosend = IC+";"+key+";"+value+";"+node.port+";"+node.succ+";"+node.nextsucc;
+				String ack = sendMsgCT(msgtosend);
+				Log.d(TAG, "Main_Insert: "+ePort+" Insert Ack received" +ack);
+				break;
 			}
 		}
 		return uri;
@@ -240,30 +250,22 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public boolean onCreate() {
 		// TODO Auto-generated method stub
-		int i;
 		TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
 		String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
 		ePort = String.valueOf(Integer.parseInt(portStr)); //Emulator Port ( eg.5554)
 		Log.d(TAG, "My Port is: "+ePort);
+		myPortHash = getHash(ePort);
 
 		set_remote_ports();
 		Log.d(TAG, "Main: "+ePort+" Remote Ports Obtained");
 		nodeList = new ArrayList<Node>(); //Instantiate nodeList
 
-		for (i=0;i < no_of_avds; i++) //Every Avd stores the Global state of the Dynamo Ring
+		for (int i=0;i < no_of_avds; i++) //Every Avd stores the Global state of the Dynamo Ring
 		{
-			try
-			{
-				String port = REMOTE_PORTS.get(i);
-				String currentHash = genHash(port);
-				Node node = new Node(port, currentHash);
-				nodeList.add(node);
-			}
-			catch (NoSuchAlgorithmException e)
-			{
-				Log.e(TAG, "Main_Oncreate: "+ePort+" No Such Algorithm Exception Occurred");
-				e.printStackTrace();
-			}
+			String port = REMOTE_PORTS.get(i);
+			String currentHash = getHash(port);
+			Node node = new Node(port, currentHash);
+			nodeList.add(node);
 		}
 
 		Collections.sort(nodeList);
@@ -279,12 +281,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 			return false;
 		}
 
-		//Setting succ and pred
-		for (i=0;i<no_of_avds;i++) {
-			nodeList.get(i).succ = nodeList.get((i + 1) % no_of_avds).port;
-			nodeList.get(i).nextsucc = nodeList.get((i + 2) % no_of_avds).port;
-			nodeList.get(i).pred = nodeList.get((i + 4) % no_of_avds).port;
-			nodeList.get(i).prepred = nodeList.get((i + 3) % no_of_avds).port;
+		set_neighbors(); //sets neighbours for all Nodes in System
+
+		List <String> myFiles = Arrays.asList(getContext().fileList());
+		if (!myFiles.isEmpty()) { //This avd has recovered from a failure
+			Log.d(TAG, "Main_OnCreate: "+ePort+" Node: "+ePort+" has recovered from a recent failure");
+			synchronize_keys();
 		}
 		return true;
 	}
@@ -348,36 +350,19 @@ public class SimpleDynamoProvider extends ContentProvider {
 			List <String> values = new ArrayList<String>();
 			List<Integer> versions = new ArrayList<Integer>();
 			String val_versions=null;
-
-			try
-			{
-				keyhash = genHash(key); //Hash of current key
-			}
-			catch (NoSuchAlgorithmException e)
-			{
-				Log.e(TAG, "Main_Query: "+ePort+" No Such Algorithm Exception Occurred");
-				e.printStackTrace();
-			}
+			keyhash = getHash(key); //Hash of current key
 
 			for (Node node : nodeList) //Find right partition for the key and forward msg to Coordinator
 			{
-				try
+				String prevHash = getHash(node.pred);
+				String myHash = getHash(node.port);
+				boolean result = compareKey(prevHash, myHash, keyhash);
+				if (result)
 				{
-					String prevHash = genHash(node.pred);
-					String myHash = genHash(node.port);
-					boolean result = compareKey(prevHash, myHash, keyhash);
-					if (result)
-					{
-						msgtosend = Q+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
-						val_versions  = sendMsgCT(msgtosend);
-						Log.d(TAG, "Server: "+ePort+" Values and Versions Received "+val_versions);
-						break;
-					}
-				}
-				catch (NoSuchAlgorithmException e)
-				{
-					Log.e(TAG, "Main_Query: "+ePort+" No Such Algorithm Exception Occurred");
-					e.printStackTrace();
+					msgtosend = Q+";"+key+";"+node.port+";"+node.succ+";"+node.nextsucc;
+					val_versions  = sendMsgCT(msgtosend);
+					Log.d(TAG, "Server: "+ePort+" Values and Versions Received "+val_versions);
+					break;
 				}
 			}
 
@@ -533,10 +518,46 @@ public class SimpleDynamoProvider extends ContentProvider {
 							message = br.readLine();
 							out.writeUTF(message);
 							out.flush();
+							br.close();
+							fileInputStream.close();
 							out.close();
 							in.close();
 							Log.d(TAG, "Server: "+ePort+" Value;Version Located and Returned to Client");
 						}
+					}
+
+					else if (pieces[0].equals(S)) //Synchronize keys
+					{
+						List <String> myFiles = Arrays.asList(con.fileList());
+						FileInputStream fileInputStream;
+						String keyHash, prevHash, prev2prevHash, message, object="";
+						boolean result;
+						prev2prevHash = getHash(prev2prevNode);
+						prevHash = getHash(prevNode);
+						for (String file: myFiles)
+						{
+							keyHash = getHash(file);
+
+							if (pieces[3].equals(ePort)) //I am the successor of failed node
+								result = compareKey(prev2prevHash, prevHash, keyHash);
+							else //I am either of the Predecessors
+								result = compareKey(prevHash, myPortHash, keyHash);
+
+							if (result)
+							{
+								fileInputStream = con.openFileInput(file);
+								BufferedReader br = new BufferedReader(new InputStreamReader(fileInputStream));
+								message = br.readLine();
+								object+=file+":"+message+"|";
+								br.close();
+								fileInputStream.close();
+							}
+						}
+						out.writeUTF(object);
+						out.flush();
+						out.close();
+						in.close();
+						Log.d(TAG, "Server: "+ePort+" Correct Keys from my node sent to Recovered Node");
 					}
 				}
 				catch (IOException e)
@@ -590,6 +611,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 				return ack;
 			}
 
+			else if (pieces[0].equals(S)) //Synchronize keys
+			{
+				String[] p = {pieces[1], pieces[2], pieces[3]};
+				List <String> ports = Arrays.asList(p);
+				ack = send_to_server(ports, msgs[0]);
+				sync_my_keys(ack);
+				return "Synced";
+			}
+
 			return null;
 		}
 
@@ -601,7 +631,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				try
 				{
 					Socket client = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(port) * 2);
-					client.setSoTimeout(300);
+					client.setSoTimeout(100);
 					DataInputStream in = new DataInputStream(client.getInputStream());
 					DataOutputStream out = new DataOutputStream(client.getOutputStream());
 					out.writeUTF(msgToserver);
@@ -618,18 +648,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 				catch (SocketTimeoutException e)
 				{
 					Log.e(TAG, "Client: " + ePort + " Socket Timeout Exception Occurred");
+					Log.e(TAG, "Client: " + ePort + " Node: "+port+" has failed");
 					e.printStackTrace();
 				}
 
 				catch (SocketException e)
 				{
 					Log.e(TAG, "Client: " + ePort + " Socket Exception Occurred");
-					e.printStackTrace();
-				}
-
-				catch (UnknownHostException e)
-				{
-					Log.e(TAG, "Client: " + ePort + " UnknownHost Exception Occurred");
+					Log.e(TAG, "Client: " + ePort + " Node: "+port+" has failed");
 					e.printStackTrace();
 				}
 
@@ -646,6 +672,42 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 			Log.d(TAG, "Client: "+ePort+" Combined Response: "+response);
 			return (response);
+		}
+
+		private void sync_my_keys(String result)
+		{
+			Log.d(TAG, "Client: "+ePort+" Synchronization Beginning at Recovered Node: "+ePort);
+			FileOutputStream fileOutputStream;
+			Context con = getContext();
+
+			System.out.println("Result : " + result);
+			String [] keyvalues = result.split("#");
+			for (String keyvalue : keyvalues) {
+				System.out.println("KV : " + keyvalue);
+				String[] temp = keyvalue.split("\\|");
+				for (String t : temp) {
+					String[] kv = t.split(":");
+
+					try
+					{
+
+						System.out.println("This is the Key"+kv[0]+"--------");
+						fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
+						fileOutputStream.write(kv[1].getBytes());
+						fileOutputStream.close();
+					}
+					catch (FileNotFoundException e){
+						Log.e(TAG, "Main_Sync: " +ePort+ " FileNotfound Exception Occurred");
+						e.printStackTrace();
+					}
+					catch (IOException e)
+					{
+						Log.e(TAG, "Main_Sync: " +ePort+ " IO Exception Occurred");
+						e.printStackTrace();
+					}
+				}
+			}
+			Log.d(TAG, "Client: "+ePort+" Synchronization Complete at Recovered Node: "+ePort);
 		}
 	}
 }
