@@ -192,7 +192,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 		}
-		Log.d(TAG, "Main: "+ePort+" Synchronization Complete at Recovered Node: "+ePort);
+		Log.d(TAG, "Main: "+ePort+" Synchronization Completed at Recovered Node: "+ePort);
 	}
 
 	@Override
