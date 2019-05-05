@@ -96,9 +96,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	{
 		int start = 5554, end = 5562;
 		for (int i = start; i<=end; i+=2)
-		{
 			REMOTE_PORTS.add(Integer.toString(i));
-		}
 		no_of_avds = REMOTE_PORTS.size();
 	}
 
