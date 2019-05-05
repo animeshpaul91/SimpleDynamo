@@ -167,9 +167,34 @@ public class SimpleDynamoProvider extends ContentProvider {
 	public void synchronize_keys()
 	{
 		String msgtosend = S+";"+prev2prevNode+";"+prevNode+";"+nextnode;
+		FileOutputStream fileOutputStream;
+		Context con = getContext();
 		String result = sendMsgCT(msgtosend);
-		Log.d(TAG,"Main_Sync: "+ePort+" Response from Client: "+result);
-		Log.d(TAG,"Main_Sync: "+ePort+" Recovered Node Ready for Operations");
+		Log.d(TAG, "Main: "+ePort+" Synchronization Beginning at Recovered Node: "+ePort);
+		String [] keyvalues = result.split("#");
+		for (String keyvalue : keyvalues) {
+			String[] temp = keyvalue.split("\\|");
+			for (String t : temp) {
+				String[] kv = t.split(":");
+				try
+				{
+					fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
+					fileOutputStream.write(kv[1].getBytes());
+					fileOutputStream.close();
+				}
+				catch (FileNotFoundException e)
+				{
+					Log.e(TAG, "Main_Sync: " +ePort+ " FileNotfound Exception Occurred");
+					e.printStackTrace();
+				}
+				catch (IOException e)
+				{
+					Log.e(TAG, "Main_Sync: " +ePort+ " IO Exception Occurred");
+					e.printStackTrace();
+				}
+			}
+		}
+		Log.d(TAG, "Main: "+ePort+" Synchronization Complete at Recovered Node: "+ePort);
 	}
 
 	@Override
@@ -526,7 +551,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						}
 					}
 
-					else if (pieces[0].equals(S)) //Synchronize keys
+					else //Synchronize keys
 					{
 						List <String> myFiles = Arrays.asList(con.fileList());
 						FileInputStream fileInputStream;
@@ -554,6 +579,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 							}
 						}
 						out.writeUTF(object);
+						System.out.println("Server: "+ePort+" Sent Message: "+object);
 						out.flush();
 						out.close();
 						in.close();
@@ -611,16 +637,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 				return ack;
 			}
 
-			else if (pieces[0].equals(S)) //Synchronize keys
+			else //Synchronize keys
 			{
 				String[] p = {pieces[1], pieces[2], pieces[3]};
 				List <String> ports = Arrays.asList(p);
 				ack = send_to_server(ports, msgs[0]);
-				sync_my_keys(ack);
-				return "Synced";
+				return ack;
 			}
-
-			return null;
 		}
 
 		private String send_to_server(List<String> ports, String msgToserver)
@@ -639,6 +662,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					out.flush();
 					msgfromserver = in.readUTF();
 					Log.d(TAG, "Client: "+ePort+" Received Response: "+msgfromserver+" from Node: "+port);
+					//Log.d(TAG, "Client: "+ePort+" Received Response: "+msgfromserver.charAt(msgfromserver.length()-1)+" from Node: "+port);
 					response += msgfromserver;
 					response += "#";
 					out.close();
@@ -671,43 +695,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 			Log.d(TAG, "Client: "+ePort+" Combined Response: "+response);
+			//Log.d(TAG, "Client: "+ePort+" Combined Response: "+response.charAt(response.length()-1));
 			return (response);
-		}
-
-		private void sync_my_keys(String result)
-		{
-			Log.d(TAG, "Client: "+ePort+" Synchronization Beginning at Recovered Node: "+ePort);
-			FileOutputStream fileOutputStream;
-			Context con = getContext();
-
-			System.out.println("Result : " + result);
-			String [] keyvalues = result.split("#");
-			for (String keyvalue : keyvalues) {
-				System.out.println("KV : " + keyvalue);
-				String[] temp = keyvalue.split("\\|");
-				for (String t : temp) {
-					String[] kv = t.split(":");
-
-					try
-					{
-
-						System.out.println("This is the Key"+kv[0]+"--------");
-						fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
-						fileOutputStream.write(kv[1].getBytes());
-						fileOutputStream.close();
-					}
-					catch (FileNotFoundException e){
-						Log.e(TAG, "Main_Sync: " +ePort+ " FileNotfound Exception Occurred");
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						Log.e(TAG, "Main_Sync: " +ePort+ " IO Exception Occurred");
-						e.printStackTrace();
-					}
-				}
-			}
-			Log.d(TAG, "Client: "+ePort+" Synchronization Complete at Recovered Node: "+ePort);
 		}
 	}
 }
