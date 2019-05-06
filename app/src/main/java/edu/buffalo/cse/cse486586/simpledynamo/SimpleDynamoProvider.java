@@ -162,15 +162,19 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 	}
 
-	public void synchronize_keys()
-	{
-		String msgtosend = S+";"+prev2prevNode+";"+prevNode+";"+nextnode;
+	public void synchronize_keys() {
+		String msgtosend = S + ";" + prev2prevNode + ";" + prevNode + ";" + nextnode+";"+ePort;
+		String[] source_nodes = {prev2prevNode, prevNode, nextnode};
 		FileOutputStream fileOutputStream;
 		Context con = getContext();
 		String result = sendMsgCT(msgtosend);
-		Log.d(TAG, "Main: "+ePort+" Synchronization Beginning at Recovered Node: "+ePort);
-		String [] keyvalues = result.split("#");
+		Log.d(TAG, "Main: " + ePort + " Synchronization Beginning at Recovered Node: " + ePort);
+		int n = -1;
+
+		synchronized (this){
+		String[] keyvalues = result.split("#");
 		for (String keyvalue : keyvalues) {
+			n++;
 			String[] temp = keyvalue.split("\\|");
 			for (String t : temp) {
 				String[] kv = t.split(":");
@@ -179,20 +183,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 					fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
 					fileOutputStream.write(kv[1].getBytes());
 					fileOutputStream.close();
-				}
-				catch (FileNotFoundException e)
-				{
-					Log.e(TAG, "Main_Sync: " +ePort+ " FileNotfound Exception Occurred");
+					Log.d(TAG, "Main_Sync: "+ePort+" Synchronized Key: "+kv[0]+" and Value: "+kv[1]+" from Node: "+source_nodes[n]);
+				} catch (FileNotFoundException e) {
+					Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
 					e.printStackTrace();
-				}
-				catch (IOException e)
-				{
-					Log.e(TAG, "Main_Sync: " +ePort+ " IO Exception Occurred");
+				} catch (IOException e) {
+					Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
 					e.printStackTrace();
 				}
 			}
 		}
-		Log.d(TAG, "Main: "+ePort+" Synchronization Complete at Recovered Node: "+ePort);
+	}
+		Log.d(TAG, "Main: "+ePort+" Synchronization Completed at Recovered Node: "+ePort);
 	}
 
 	@Override
@@ -399,8 +401,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 				values.add(temp[0]);
 				versions.add(Integer.parseInt(temp[1]));
 			}
+			Log.d(TAG, "Main_Query: "+ePort+" Values for Key "+values.toString());
+			Log.d(TAG, "Main_Query: "+ePort+" Versions for Key "+versions.toString());
 
 			int maxindex = versions.indexOf(Collections.max(versions));
+			Log.d(TAG, "Main_Query: "+ePort+" Max Version Returned: "+values.get(maxindex));
 			String[] row = {key, values.get(maxindex)};
 			mc.addRow(row);
 			return mc;
@@ -475,7 +480,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 							fileOutputStream.write(value.getBytes());
 							fileOutputStream.close();
 							out.writeUTF(ePort); //Acknowledging Insert
-							Log.d(TAG, "Server: "+ePort+" Write Successful");
+							Log.d(TAG, "Server: "+ePort+" File Created with Key: "+key+" and Value: "+value);
 							out.flush();
 							out.close();
 							in.close();
@@ -582,7 +587,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						out.flush();
 						out.close();
 						in.close();
-						Log.d(TAG, "Server: "+ePort+" Correct Keys from my node sent to Recovered Node");
+						Log.d(TAG, "Server: "+ePort+" Correct Keys from my node sent to Recovered Node: "+pieces[4]);
 					}
 				}
 				catch (IOException e)
