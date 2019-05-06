@@ -535,7 +535,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						out.flush();
 						out.close();
 						in.close();
-						Log.d(TAG, "Server: "+ePort+" @ Query Obtained in my Avd");
+						Log.d(TAG, "Server: "+ePort+" All Keys in my Avd are queried");
 					}
 
 					else if (pieces[0].equals(Q)) //Query particular key
