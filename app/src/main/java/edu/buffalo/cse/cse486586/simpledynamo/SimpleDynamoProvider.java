@@ -172,28 +172,31 @@ public class SimpleDynamoProvider extends ContentProvider {
 		int n = -1;
 
 		synchronized (this){
-		String[] keyvalues = result.split("#");
-		for (String keyvalue : keyvalues) {
-			n++;
-			String[] temp = keyvalue.split("\\|");
-			for (String t : temp) {
-				String[] kv = t.split(":");
-				try
-				{
-					fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
-					fileOutputStream.write(kv[1].getBytes());
-					fileOutputStream.close();
-					Log.d(TAG, "Main_Sync: "+ePort+" Synchronized Key: "+kv[0]+" and Value: "+kv[1]+" from Node: "+source_nodes[n]);
-				} catch (FileNotFoundException e) {
-					Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
-					e.printStackTrace();
-				} catch (IOException e) {
-					Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
-					e.printStackTrace();
+			String[] keyvalues = result.split("#");
+			for (String keyvalue : keyvalues) {
+				n++;
+				String[] temp = keyvalue.split("\\|");
+				for (String t : temp) {
+					String[] kv = t.split(":");
+					try
+					{
+						List <String> myFiles = Arrays.asList(con.fileList());
+						if (!myFiles.contains(kv[0])) {
+							fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
+							fileOutputStream.write(kv[1].getBytes());
+							fileOutputStream.close();
+							Log.d(TAG, "Main_Sync: " + ePort + " Synchronized Key: " + kv[0] + " and Value: " + kv[1] + " from Node: " + source_nodes[n]);
+						}
+					} catch (FileNotFoundException e) {
+						Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
+						e.printStackTrace();
+					} catch (IOException e) {
+						Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
+						e.printStackTrace();
+					}
 				}
 			}
 		}
-	}
 		Log.d(TAG, "Main: "+ePort+" Synchronization Completed at Recovered Node: "+ePort);
 	}
 
@@ -236,7 +239,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					return 1;
 				}
 			}
-		 return 0;
+			return 0;
 		}
 	}
 
@@ -321,7 +324,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
-			String[] selectionArgs, String sortOrder) {
+						String[] selectionArgs, String sortOrder) {
 		// TODO Auto-generated method stub
 		String key = selection, keyhash=null;
 		FileInputStream fileInputStream;
@@ -414,20 +417,20 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public int update(Uri uri, ContentValues values, String selection,
-			String[] selectionArgs) {
+					  String[] selectionArgs) {
 		// TODO Auto-generated method stub
 		return 0;
 	}
 
-    private String genHash(String input) throws NoSuchAlgorithmException {
-        MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
-        byte[] sha1Hash = sha1.digest(input.getBytes());
-        Formatter formatter = new Formatter();
-        for (byte b : sha1Hash) {
-            formatter.format("%02x", b);
-        }
-        return formatter.toString();
-    }
+	private String genHash(String input) throws NoSuchAlgorithmException {
+		MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+		byte[] sha1Hash = sha1.digest(input.getBytes());
+		Formatter formatter = new Formatter();
+		for (byte b : sha1Hash) {
+			formatter.format("%02x", b);
+		}
+		return formatter.toString();
+	}
 
 	//Server Task starts here
 	private class ServerTask extends AsyncTask<ServerSocket, String, Void>
