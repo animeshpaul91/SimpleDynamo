@@ -312,8 +312,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 		set_neighbors(); //sets neighbours for all Nodes in System
 
 		List <String> myFiles = Arrays.asList(getContext().fileList());
-		if (!myFiles.isEmpty()) { //This avd has recovered from a failure
-			Log.d(TAG, "Main_Oncreate: "+ePort+" Deleting all my files first");
+		if (!myFiles.isEmpty()) {
+			Log.d(TAG, "Main_Oncreate: "+ePort+" I have just Recovered from a Failure");
+			Log.d(TAG, "Main_Oncreate: "+ePort+" Deleting all stale files first");
 			for (String file: myFiles)
 				getContext().deleteFile(file);
 			Log.d(TAG, "Main_OnCreate: "+ePort+" Sending Key Sync Signal to Nodes: "+prev2prevNode+" ,"+prevNode+" ,"+nextnode);
