@@ -162,33 +162,38 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 	}
 
-	public void synchronize_keys()
-	{
-		String msgtosend = S+";"+prev2prevNode+";"+prevNode+";"+nextnode;
+	public void synchronize_keys() {
+		String msgtosend = S + ";" + prev2prevNode + ";" + prevNode + ";" + nextnode+";"+ePort;
+		String[] source_nodes = {prev2prevNode, prevNode, nextnode};
 		FileOutputStream fileOutputStream;
 		Context con = getContext();
 		String result = sendMsgCT(msgtosend);
-		Log.d(TAG, "Main: "+ePort+" Synchronization Beginning at Recovered Node: "+ePort);
-		String [] keyvalues = result.split("#");
-		for (String keyvalue : keyvalues) {
-			String[] temp = keyvalue.split("\\|");
-			for (String t : temp) {
-				String[] kv = t.split(":");
-				try
-				{
-					fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
-					fileOutputStream.write(kv[1].getBytes());
-					fileOutputStream.close();
-				}
-				catch (FileNotFoundException e)
-				{
-					Log.e(TAG, "Main_Sync: " +ePort+ " FileNotfound Exception Occurred");
-					e.printStackTrace();
-				}
-				catch (IOException e)
-				{
-					Log.e(TAG, "Main_Sync: " +ePort+ " IO Exception Occurred");
-					e.printStackTrace();
+		Log.d(TAG, "Main: " + ePort + " Synchronization Beginning at Recovered Node: " + ePort);
+		int n = -1;
+
+		synchronized (this){
+			String[] keyvalues = result.split("#");
+			for (String keyvalue : keyvalues) {
+				n++;
+				String[] temp = keyvalue.split("\\|");
+				for (String t : temp) {
+					String[] kv = t.split(":");
+					try
+					{
+						List <String> myFiles = Arrays.asList(con.fileList());
+						if (!myFiles.contains(kv[0])) {
+							fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
+							fileOutputStream.write(kv[1].getBytes());
+							fileOutputStream.close();
+							Log.d(TAG, "Main_Sync: " + ePort + " Synchronized Key: " + kv[0] + " and Value: " + kv[1] + " from Node: " + source_nodes[n]);
+						}
+					} catch (FileNotFoundException e) {
+						Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
+						e.printStackTrace();
+					} catch (IOException e) {
+						Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
+						e.printStackTrace();
+					}
 				}
 			}
 		}
@@ -234,7 +239,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					return 1;
 				}
 			}
-		 return 0;
+			return 0;
 		}
 	}
 
@@ -307,8 +312,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 		set_neighbors(); //sets neighbours for all Nodes in System
 
 		List <String> myFiles = Arrays.asList(getContext().fileList());
-		if (!myFiles.isEmpty()) { //This avd has recovered from a failure
-			Log.d(TAG, "Main_Oncreate: "+ePort+" Deleting all my files first");
+		if (!myFiles.isEmpty()) {
+			Log.d(TAG, "Main_Oncreate: "+ePort+" I have just Recovered from a Failure");
+			Log.d(TAG, "Main_Oncreate: "+ePort+" Deleting all stale files first");
 			for (String file: myFiles)
 				getContext().deleteFile(file);
 			Log.d(TAG, "Main_OnCreate: "+ePort+" Sending Key Sync Signal to Nodes: "+prev2prevNode+" ,"+prevNode+" ,"+nextnode);
@@ -319,7 +325,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
-			String[] selectionArgs, String sortOrder) {
+						String[] selectionArgs, String sortOrder) {
 		// TODO Auto-generated method stub
 		String key = selection, keyhash=null;
 		FileInputStream fileInputStream;
@@ -399,8 +405,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 				values.add(temp[0]);
 				versions.add(Integer.parseInt(temp[1]));
 			}
+			Log.d(TAG, "Main_Query: "+ePort+" Values for Key "+values.toString());
+			Log.d(TAG, "Main_Query: "+ePort+" Versions for Key "+versions.toString());
 
 			int maxindex = versions.indexOf(Collections.max(versions));
+			Log.d(TAG, "Main_Query: "+ePort+" Max Version Returned: "+values.get(maxindex));
 			String[] row = {key, values.get(maxindex)};
 			mc.addRow(row);
 			return mc;
@@ -409,20 +418,20 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public int update(Uri uri, ContentValues values, String selection,
-			String[] selectionArgs) {
+					  String[] selectionArgs) {
 		// TODO Auto-generated method stub
 		return 0;
 	}
 
-    private String genHash(String input) throws NoSuchAlgorithmException {
-        MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
-        byte[] sha1Hash = sha1.digest(input.getBytes());
-        Formatter formatter = new Formatter();
-        for (byte b : sha1Hash) {
-            formatter.format("%02x", b);
-        }
-        return formatter.toString();
-    }
+	private String genHash(String input) throws NoSuchAlgorithmException {
+		MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+		byte[] sha1Hash = sha1.digest(input.getBytes());
+		Formatter formatter = new Formatter();
+		for (byte b : sha1Hash) {
+			formatter.format("%02x", b);
+		}
+		return formatter.toString();
+	}
 
 	//Server Task starts here
 	private class ServerTask extends AsyncTask<ServerSocket, String, Void>
@@ -475,7 +484,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 							fileOutputStream.write(value.getBytes());
 							fileOutputStream.close();
 							out.writeUTF(ePort); //Acknowledging Insert
-							Log.d(TAG, "Server: "+ePort+" Write Successful");
+							Log.d(TAG, "Server: "+ePort+" File Created with Key: "+key+" and Value: "+value);
 							out.flush();
 							out.close();
 							in.close();
@@ -527,7 +536,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						out.flush();
 						out.close();
 						in.close();
-						Log.d(TAG, "Server: "+ePort+" @ Query Obtained in my Avd");
+						Log.d(TAG, "Server: "+ePort+" All Keys in my Avd are queried");
 					}
 
 					else if (pieces[0].equals(Q)) //Query particular key
@@ -582,7 +591,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						out.flush();
 						out.close();
 						in.close();
-						Log.d(TAG, "Server: "+ePort+" Correct Keys from my node sent to Recovered Node");
+						Log.d(TAG, "Server: "+ePort+" Correct Keys from my node sent to Recovered Node: "+pieces[4]);
 					}
 				}
 				catch (IOException e)
