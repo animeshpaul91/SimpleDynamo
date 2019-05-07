@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-#Sun May 05 02:55:33 EDT 2019
-=======
-#Mon May 06 19:19:07 EDT 2019
->>>>>>> CornerCases
+#Mon May 06 20:18:19 EDT 2019
 base.0=/home/animesh/AndroidStudioProjects/SimpleDynamo/app/build/intermediates/dex/debug/mergeDexDebug/out
 path.0=classes.dex
 renamed.0=classes.dex
