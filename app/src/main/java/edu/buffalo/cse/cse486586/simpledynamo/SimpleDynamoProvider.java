@@ -281,11 +281,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 		TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
 		String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
 		ePort = String.valueOf(Integer.parseInt(portStr)); //Emulator Port ( eg.5554)
-		Log.d(TAG, "My Port is: "+ePort);
+		Log.d(TAG, "Main_Oncreate: "+ePort+" My Port is: "+ePort);
 		myPortHash = getHash(ePort);
 
 		set_remote_ports();
-		Log.d(TAG, "Main: "+ePort+" Remote Ports Obtained");
+		Log.d(TAG, "Main_Oncreate: "+ePort+" Remote Ports Obtained");
 		nodeList = new ArrayList<Node>(); //Instantiate nodeList
 
 		for (int i=0;i < no_of_avds; i++) //Every Avd stores the Global state of the Dynamo Ring
