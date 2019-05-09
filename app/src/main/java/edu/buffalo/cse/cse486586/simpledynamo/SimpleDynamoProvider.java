@@ -171,29 +171,27 @@ public class SimpleDynamoProvider extends ContentProvider {
 		Log.d(TAG, "Main: " + ePort + " Synchronization Beginning at Recovered Node: " + ePort);
 		int n = -1;
 
-		synchronized (this){
-			String[] keyvalues = result.split("#");
-			for (String keyvalue : keyvalues) {
-				n++;
-				String[] temp = keyvalue.split("\\|");
-				for (String t : temp) {
-					String[] kv = t.split(":");
-					try
-					{
-						List <String> myFiles = Arrays.asList(con.fileList());
-						if (!myFiles.contains(kv[0])) {
-							fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
-							fileOutputStream.write(kv[1].getBytes());
-							fileOutputStream.close();
-							Log.d(TAG, "Main_Sync: " + ePort + " Synchronized Key: " + kv[0] + " and Value: " + kv[1] + " from Node: " + source_nodes[n]);
-						}
-					} catch (FileNotFoundException e) {
-						Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
-						e.printStackTrace();
-					} catch (IOException e) {
-						Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
-						e.printStackTrace();
+		String[] keyvalues = result.split("#");
+		for (String keyvalue : keyvalues) {
+			n++;
+			String[] temp = keyvalue.split("\\|");
+			for (String t : temp) {
+				String[] kv = t.split(":");
+				try
+				{
+					List <String> myFiles = Arrays.asList(con.fileList());
+					if (!myFiles.contains(kv[0])) {
+						fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
+						fileOutputStream.write(kv[1].getBytes());
+						fileOutputStream.close();
+						Log.d(TAG, "Main_Sync: " + ePort + " Synchronized Key: " + kv[0] + " and Value: " + kv[1] + " from Node: " + source_nodes[n]);
 					}
+				} catch (FileNotFoundException e) {
+					Log.e(TAG, "Main_Sync: " + ePort + " FileNotfound Exception Occurred");
+					e.printStackTrace();
+				} catch (IOException e) {
+					Log.e(TAG, "Main_Sync: " + ePort + " IO Exception Occurred");
+					e.printStackTrace();
 				}
 			}
 		}
