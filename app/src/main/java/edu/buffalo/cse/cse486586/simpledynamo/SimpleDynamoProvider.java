@@ -42,13 +42,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private static final String  value_field = "value";
 	private static final String my_dht = "@";
 	private static final String all_dht = "*";
-
 	private static final String IC = "IC"; //Forward Insert request to Coordinator and 2 Successors
 	private static final String DA = "DA"; //Delete all Keys from entire Ring
 	private static final String D = "D"; //Delete specific key
 	private static final String QA = "QA"; //Query all keys
 	private static final String Q = "Q"; //Query specific key
 	private static final String S = "S"; //Synchronize signal
+	private static final String P = "P"; //Ping next node
+	private static final String A = "ACK"; //Send Ack on Ping
 	private static Uri provideruri = Uri.parse("content://edu.buffalo.cse.cse486586.simpledynamo.provider"); //URI
 	List<Node> nodeList;
 	private static ArrayList<String> REMOTE_PORTS = new ArrayList<String>();
@@ -177,9 +178,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 			String[] temp = keyvalue.split("\\|");
 			for (String t : temp) {
 				String[] kv = t.split(":");
-				try
-				{
-					List <String> myFiles = Arrays.asList(con.fileList());
+				try {
+					List<String> myFiles = Arrays.asList(con.fileList());
 					if (!myFiles.contains(kv[0])) {
 						fileOutputStream = con.openFileOutput(kv[0], Context.MODE_PRIVATE);
 						fileOutputStream.write(kv[1].getBytes());
@@ -308,11 +308,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 		set_neighbors(); //sets neighbours for all Nodes in System
+		String ack = sendMsgCT(P+";"+nextnode);
+		String []temp = ack.split("#");
 
-		List <String> myFiles = Arrays.asList(getContext().fileList());
-		if (!myFiles.isEmpty()) {
+		if (temp[0].equals(A)) { //Recovery Condition
 			Log.d(TAG, "Main_Oncreate: "+ePort+" I have just Recovered from a Failure");
 			Log.d(TAG, "Main_Oncreate: "+ePort+" Deleting all stale files first");
+			List <String> myFiles = Arrays.asList(getContext().fileList());
 			for (String file: myFiles)
 				getContext().deleteFile(file);
 			Log.d(TAG, "Main_OnCreate: "+ePort+" Sending Key Sync Signal to Nodes: "+prev2prevNode+" ,"+prevNode+" ,"+nextnode);
@@ -557,6 +559,16 @@ public class SimpleDynamoProvider extends ContentProvider {
 						}
 					}
 
+					else if (pieces[0].equals(P)) //Ping request
+					{
+						List <String> myFiles = Arrays.asList(con.fileList());
+						if(!myFiles.isEmpty())
+							out.writeUTF(A);
+						out.flush();
+						out.close();
+						in.close();
+					}
+
 					else //Synchronize keys
 					{
 						List <String> myFiles = Arrays.asList(con.fileList());
@@ -640,6 +652,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 				List <String> ports = Arrays.asList(p);
 				String msgToserver = Q+";"+pieces[1]; //Q;key
 				ack = send_to_server(ports, msgToserver);
+				return ack;
+			}
+
+			else if (pieces[0].equals(P)) //Ping next node
+			{
+				String[] p = {pieces[1]};
+				List <String> ports = Arrays.asList(p);
+				ack = send_to_server(ports, msgs[0]);
 				return ack;
 			}
 
