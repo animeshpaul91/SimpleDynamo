@@ -1,7 +1,7 @@
 # SimpleDynamo
 ## A simplified implementation of Dynamo DB - Amazon's massive key-value storage
 
-This project aimed at the implementation of a simplified version of Dynamo DB which is Amazon's massive replicated key-value storage. In an android environment, there are five emulators which were used to store replicated data. The following functionalities were implemented in the project: 
+This project aimed at the implementation of a simplified version of Dynamo DB which is Amazon's massive replicated key-value storage. In an android environment, there are five emulators which were used to store replicated data. The following functionalities were implemented in the project using Consistent Hashing: 
 1. Partitioning
 2. Replication 
 3. Failure Handling
